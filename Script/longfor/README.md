@@ -12,6 +12,7 @@
 ### v1.2 (2026-10-26)
 - 🐛 **修复Token获取** - 兼容龙湖APP接口版本升级，不再写死 `v1_14_0`
 - ✅ **验证新版接口** - 支持当前 `v1_30_0/v1/user-info` 请求
+- 🌐 **改善脚本下载** - 使用 jsDelivr CDN，避免 GitHub Raw 连接超时
 
 ### v1.1 (2025-07-08)
 - 🎉 **新增抽奖功能** - 自动参与抽奖活动，获取奖品
@@ -59,7 +60,7 @@
 
 1. **下载模块文件**
    ```
-   https://raw.githubusercontent.com/Ruthguo/Auxiliary/main/Script/longfor/longfor-checkin.sgmodule
+   https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@main/Script/longfor/longfor-checkin.sgmodule
    ```
 
 2. **导入模块** - Surge: 配置 → 模块 → 安装新模块
@@ -69,7 +70,7 @@
 1. **手动添加脚本配置**
    - 脚本地址：
    ```
-   https://raw.githubusercontent.com/Ruthguo/Auxiliary/main/Script/longfor/longfor-checkin.js
+   https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@main/Script/longfor/longfor-checkin.js
    ```
 
 2. **添加MITM配置**
