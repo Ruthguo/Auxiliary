@@ -286,7 +286,9 @@ async function performLottery(headers) {
 }
 
 function getToken() {
-    if (isMatch(/\/supera\/member\/api\/bff\/pages\/v1_14_0\/v1\/user-info/)) {
+    // 页面接口版本会随龙湖 APP 升级（例如 v1_14_0、v1_30_0），
+    // 不要写死版本号，否则 APP 升级后将无法捕获 lmToken。
+    if (isMatch(/\/supera\/member\/api\/bff\/pages\/v[^/]+\/v1\/user-info/)) {
         log('开始获取token')
         
         try {

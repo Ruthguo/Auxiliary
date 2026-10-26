@@ -3,11 +3,15 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS-lightgrey.svg)]()
 [![Script](https://img.shields.io/badge/script-JavaScript-yellow.svg)]()
-[![Version](https://img.shields.io/badge/version-v1.1-green.svg)]()
+[![Version](https://img.shields.io/badge/version-v1.2-green.svg)]()
 
 > 🎯 一个用于龙湖APP自动签到和抽奖的脚本，支持Surge、Shadowrocket、Quantumult X、Loon等代理工具平台
 
 ## 🆕 更新日志
+
+### v1.2 (2026-10-26)
+- 🐛 **修复Token获取** - 兼容龙湖APP接口版本升级，不再写死 `v1_14_0`
+- ✅ **验证新版接口** - 支持当前 `v1_30_0/v1/user-info` 请求
 
 ### v1.1 (2025-07-08)
 - 🎉 **新增抽奖功能** - 自动参与抽奖活动，获取奖品
@@ -55,7 +59,7 @@
 
 1. **下载模块文件**
    ```
-   https://raw.githubusercontent.com/devkityeung/Auxiliary/main/Script/longfor/longfor-checkin.sgmodule
+   https://raw.githubusercontent.com/Ruthguo/Auxiliary/main/Script/longfor/longfor-checkin.sgmodule
    ```
 
 2. **导入模块** - Surge: 配置 → 模块 → 安装新模块
@@ -65,7 +69,7 @@
 1. **手动添加脚本配置**
    - 脚本地址：
    ```
-   https://raw.githubusercontent.com/devkityeung/Auxiliary/main/Script/longfor/longfor-checkin.js
+   https://raw.githubusercontent.com/Ruthguo/Auxiliary/main/Script/longfor/longfor-checkin.js
    ```
 
 2. **添加MITM配置**
@@ -74,7 +78,7 @@
    ```
 
 3. **配置脚本规则**
-   - **获取Token脚本**：匹配 `^https://gw2c-hw-open\.longfor\.com/supera/member/api/bff/pages/v1_14_0/v1/user-info`
+   - **获取Token脚本**：匹配 `^https://gw2c-hw-open\.longfor\.com/supera/member/api/bff/pages/v[^/]+/v1/user-info`
    - **定时签到和抽奖脚本**：设置定时任务，建议每天上午9点执行
 
 ### 获取Token
@@ -182,8 +186,8 @@ hostname = gw2c-hw-open.longfor.com
 
 ## 📞 联系方式
 
-- **GitHub**: [devkityeung/Auxiliary](https://github.com/devkityeung/Auxiliary)
-- **Issues**: [提交问题和建议](https://github.com/devkityeung/Auxiliary/issues)
+- **GitHub**: [Ruthguo/Auxiliary](https://github.com/Ruthguo/Auxiliary)
+- **Issues**: [提交问题和建议](https://github.com/Ruthguo/Auxiliary/issues)
 
 ---
 
