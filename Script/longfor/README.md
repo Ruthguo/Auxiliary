@@ -3,11 +3,37 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS-lightgrey.svg)]()
 [![Script](https://img.shields.io/badge/script-JavaScript-yellow.svg)]()
-[![Version](https://img.shields.io/badge/version-v1.2-green.svg)]()
+[![Version](https://img.shields.io/badge/version-v1.3.0-green.svg)]()
 
 > 🎯 一个用于龙湖APP自动签到和抽奖的脚本，支持Surge、Shadowrocket、Quantumult X、Loon等代理工具平台
 
 ## 🆕 更新日志
+
+### v1.3.0 (2026-10-27)：小程序签到与抽奖活动发现
+
+- 保留 APP 签到和原 `longfor_token` 存储键；小程序凭据独立保存。
+- 新增请求捕获规则，读取小程序实际签到请求中的 `activity_no`、`token`、`X-LF-UserToken` 和必要请求头，不假定 APP Token 可以通用。
+- 抽奖前先读取页面接口，解析 `data.activity_no` 和 `turntablecom` 组件编号；删除过期的固定抽奖编号。
+- 使用手机捕获的抽奖页面入口，不采用参考项目中同样写死的旧页面编号。尚未捕获入口或没有有效转盘时提示并停止，不退回旧活动。
+- 不把失败或缺少奖励信息误报为“今日已签到”；POST 不自动重试，避免超时后重复抽奖。
+- 参考：[langchou/autolongfor](https://github.com/langchou/autolongfor) 的 `signin` 和 `get_lottery_activity_info`。未迁移助力、多账号或钉钉功能。
+
+#### 安装与首次捕获
+
+1. **必须更新整个模块**，以加入新增捕获规则。使用下文的 `@v1.3.0` 模块地址，避免 `@main` 的 CDN 缓存继续返回旧脚本。模块中的四个 `script-path` 均已指向该版本。
+2. 更新模块后重新连接小火箭。保持 MITM 开启，证书已安装并完全信任。
+3. APP：打开“我的”页面获取 Token；已有 Token 可继续使用。
+4. 小程序：打开你要签到的龙湖小程序，**手动签到一次**，等待“小程序签到配置已保存”通知。仅打开首页不保证产生签到请求；今天已签到且没有发出请求时，需要下次手动签到时捕获。
+5. 抽奖：打开实际转盘活动页，等待“抽奖页面入口已保存”和“抽奖请求凭据已保存”通知；如风控字段只出现在签到/抽奖请求中，需手动操作一次以更新凭据。
+6. 定时任务依次执行 APP、小程序、抽奖，并分别报告结果。抽奖仅在接口明确返回正整数 `data.chance` 时执行一次，不消耗全部积累机会。
+
+首次捕获按 `X-LF-Channel: C2`，或 `X-LF-DXRisk-Source: 5` 加微信 UA 识别小程序。其他小程序若使用不同渠道，需要依据实际请求适配，不能只替换固定活动编号。脚本重放捕获的活动编号和必要请求头；活动、风控信息或登录状态变化后需重新捕获。不支持自动登录或刷新风控令牌。
+
+使用 APP 和小程序时请确认登录的是同一个账号；本版本延续原脚本的单账号使用方式。凭据仅保存在代理工具本地存储中，不写入源码或日志；请勿分享包含 Token/Cookie 的抓包记录。
+
+测试可临时设置为几分钟后的 cron，例如 `40 9 * * *` 是每天 09:40，顺序为“分钟 小时 日期 月份 星期”。保存并重连后，检查 `script cron evaluate next` 是否符合预期。测试结束恢复 `0 9 * * *`。
+
+验证范围：本地模拟 Shadowrocket/Quantumult X API 的离线测试。尚未在真实手机和龙湖账号上验证小程序签到、当前活动有效性或风控兼容性。
 
 ### v1.2 (2026-10-26)
 - 🐛 **修复Token获取** - 兼容龙湖APP接口版本升级，不再写死 `v1_14_0`
@@ -60,7 +86,7 @@
 
 1. **下载模块文件**
    ```
-   https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@main/Script/longfor/longfor-checkin.sgmodule
+   https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.sgmodule
    ```
 
 2. **导入模块** - Surge: 配置 → 模块 → 安装新模块
@@ -70,7 +96,7 @@
 1. **手动添加脚本配置**
    - 脚本地址：
    ```
-   https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@main/Script/longfor/longfor-checkin.js
+   https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
    ```
 
 2. **添加MITM配置**

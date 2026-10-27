@@ -1,5 +1,5 @@
 #!name=龙湖自动签到
-#!desc=龙湖APP自动签到功能模块，包含获取Token、定时签到和抽奖功能
+#!desc=龙湖APP及小程序签到，捕获独立凭据，从活动页面解析抽奖配置
 #!system=ios
 # 使用方法：
 # 1. 将此配置导入 Shadowrocket
@@ -12,10 +12,17 @@ hostname = %APPEND% gw2c-hw-open.longfor.com
 
 [Script]
 # 获取Token脚本, 获取成功后可以注释
-龙湖签到Token = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^\/]+\/v1\/user-info,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@main/Script/longfor/longfor-checkin.js
+龙湖签到Token = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^\/]+\/v1\/user-info,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
+
+# 捕获小程序签到正文、抽奖页面入口和实际认证请求头。
+# 首次需手动完成一次小程序签到，并打开实际抽奖页。
+龙湖小程序及抽奖捕获 = type=http-request,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/(?:lmarketing-task-api-mvc-prod\/openapi\/task\/v1\/signature\/clock|llt-gateway-prod\/api\/v1\/activity\/auth\/lottery\/(?:sign|click))(?:\?|$),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
+
+# 只保存响应确实包含转盘组件的页面，避免其他活动页面覆盖入口。
+龙湖抽奖页面捕获 = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/llt-gateway-prod\/api\/v1\/page\/info(?:\?|$),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
 
 # 定时签到和抽奖脚本
-龙湖自动签到 = type=cron,cronexp="0 9 * * *",wake-system=1,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@main/Script/longfor/longfor-checkin.js
+龙湖自动签到 = type=cron,cronexp="0 9 * * *",wake-system=1,timeout=120,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
 
 # 使用说明：
 # 1. 安装配置后打开龙湖APP并登录
