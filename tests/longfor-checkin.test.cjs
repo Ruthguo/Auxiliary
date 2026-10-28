@@ -175,10 +175,99 @@ test('module captures only signin credentials and points to new version', () => 
     assert.ok(!/lottery|page\\\/info|抽奖/.test(module))
     const rules = module.split('\n').filter(line => line.includes('script-path='))
     assert.equal(rules.length, 3)
-    for (const line of rules) assert.ok(line.includes('@v1.3.1/'))
+    for (const line of rules) assert.ok(line.includes('@v1.3.2/'))
     const capture = rules.find(line => line.includes('type=http-request'))
     const pattern = capture.match(/pattern=(.*?),requires-body=/)[1]
     const regex = new RegExp(pattern)
     assert.ok(regex.test(signURL))
+    assert.ok(regex.test(base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info'))
     assert.ok(!regex.test(base + '/llt-gateway-prod/api/v1/activity/auth/lottery/sign'))
+})
+
+test('login traffic captures fresh risk token and cookie, then APP uses them without hardcoded values', async () => {
+    const store = {}
+    const risk = 'fresh-risk-token-from-app'
+    const cookie = 'fresh-session-cookie'
+    const request = { method: 'GET', url: base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info', headers: {
+        LmToken: appToken, 'X-LF-DXRisk-Token': risk, Cookie: cookie,
+        'X-LF-DXRisk-Captcha-Token': 'undefined'
+    } }
+    const captured = await run({ store, request })
+    const profile = JSON.parse(store.longfor_app_headers_v1)
+    assert.equal(profile.token, appToken)
+    assert.equal(profile.headers['x-lf-dxrisk-token'], risk)
+    assert.ok(!profile.headers['x-lf-dxrisk-captcha-token'])
+    assert.ok(captured.notices.some(n => n[1] === '龙湖 APP｜风控 Token 已更新'))
+    for (const secret of [appToken, risk, cookie]) assert.ok(!JSON.stringify(captured.logs.concat(captured.notices)).includes(secret))
+    const repeated = await run({ store, request })
+    assert.equal(repeated.notices.length, 0)
+    const executed = await run({ store })
+    assert.equal(executed.calls[0].headers['x-lf-dxrisk-token'], risk)
+    assert.equal(executed.calls[0].headers.cookie, cookie)
+    assert.ok(!executed.calls[0].headers['x-lf-dxrisk-captcha-token'])
+})
+
+test('APP manual signin refreshes real captcha credentials and headers', async () => {
+    const store = { longfor_token: appToken }
+    await run({ store, request: { method: 'POST', url: signURL, headers: {
+        token: appToken, 'X-LF-UserToken': appToken, 'X-LF-Channel': 'L0',
+        'X-LF-DXRisk-Token': 'latest-app-risk', 'X-LF-DXRisk-Captcha-Token': 'manual-validation-token',
+        Origin: 'https://longzhu.longfor.com', Referer: 'https://longzhu.longfor.com/current'
+    }, body: '{}' } })
+    const result = await run({ store })
+    assert.equal(result.calls[0].headers['x-lf-dxrisk-captcha-token'], 'manual-validation-token')
+    assert.equal(result.calls[0].headers['x-lf-dxrisk-token'], 'latest-app-risk')
+    assert.equal(result.calls[0].headers.referer, 'https://longzhu.longfor.com/current')
+    assert.ok(!('X-LF-DXRisk-Token' in result.calls[0].headers))
+})
+
+test('ordinary APP request missing risk fields does not erase saved values or override signin origin', async () => {
+    const store = { longfor_token: appToken, longfor_app_headers_v1: JSON.stringify({ token: appToken, headers: {
+        'x-lf-dxrisk-token': 'saved-risk', 'x-lf-dxrisk-captcha-token': 'saved-validation', origin: 'https://longzhu.longfor.com'
+    } }) }
+    await run({ store, request: { method: 'GET', url: base + '/supera/member/api/profile', headers: {
+        LmToken: appToken, Origin: 'https://different-origin.example', 'X-LF-DXRisk-Token': '', 'X-LF-DXRisk-Captcha-Token': 'null'
+    } } })
+    const profile = JSON.parse(store.longfor_app_headers_v1)
+    assert.equal(profile.headers['x-lf-dxrisk-token'], 'saved-risk')
+    assert.equal(profile.headers['x-lf-dxrisk-captcha-token'], 'saved-validation')
+    assert.equal(profile.headers.origin, 'https://longzhu.longfor.com')
+})
+
+test('new login token never reuses previous-session risk credentials', async () => {
+    const store = { longfor_token: appToken, longfor_app_headers_v1: JSON.stringify({ token: appToken, headers: { 'x-lf-dxrisk-token': 'old-session-risk' } }) }
+    await run({ store, request: { method: 'GET', url: base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info', headers: { LmToken: 'new-login-token-for-test' } } })
+    const result = await run({ store })
+    assert.equal(result.calls[0].headers.token, 'new-login-token-for-test')
+    assert.ok(!result.calls[0].headers['x-lf-dxrisk-token'])
+    assert.ok(!result.calls[0].headers.cookie)
+})
+
+test('mini request cannot overwrite APP risk credentials', async () => {
+    const oldProfile = JSON.stringify({ token: appToken, headers: { 'x-lf-dxrisk-token': 'app-only-risk' } })
+    const store = { longfor_token: appToken, longfor_app_headers_v1: oldProfile }
+    await run({ store, request: { method: 'POST', url: signURL, headers: { ...miniHeaders, 'X-LF-DXRisk-Token': 'mini-only-risk' }, body: '{"activity_no":"mini"}' } })
+    assert.equal(store.longfor_app_headers_v1, oldProfile)
+    assert.equal(store.longfor_token, appToken)
+})
+
+test('APP risk capture storage failure is labeled APP rather than mini', async () => {
+    const result = await run({ store: { longfor_token: appToken }, failWrite: true, request: { method: 'POST', url: signURL, headers: {
+        token: appToken, 'X-LF-Channel': 'L0', 'X-LF-DXRisk-Token': 'fresh-risk'
+    }, body: '{}' } })
+    assert.ok(result.notices.some(n => n[1] === '龙湖 APP｜请求捕获失败'))
+    assert.ok(!result.notices.some(n => n[1] === '龙湖 APP｜风控 Token 已更新'))
+})
+
+test('old captured auth headers cannot overwrite the current APP login token', async () => {
+    const newToken = 'new-app-login-token-for-test'
+    const store = { longfor_token: appToken }
+    await run({ store, request: { method: 'POST', url: signURL, body: '{}', headers: {
+        lmToken: newToken, token: appToken, 'X-LF-UserToken': appToken,
+        'X-LF-Channel': 'L0', 'X-LF-DXRisk-Token': 'new-risk-token'
+    } } })
+    const result = await run({ store })
+    assert.equal(result.calls[0].headers.token, newToken)
+    assert.equal(result.calls[0].headers['x-lf-usertoken'], newToken)
+    assert.equal(result.calls[0].headers.authtoken, newToken)
 })

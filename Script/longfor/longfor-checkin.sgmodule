@@ -2,14 +2,15 @@
 #!desc=龙湖 APP 和小程序每日签到，通知分别标明项目与执行结果
 #!system=ios
 # 更新后重新连接小火箭，已有 APP Token 和小程序凭据可继续使用。
-# 首次使用：打开 APP“我的”页面获取 Token；手动完成一次小程序签到以捕获请求。
+# 首次使用：打开 APP“我的”和签到页以更新登录及风控凭据；手动完成一次小程序签到。
+# 只有 APP 请求实际携带风控字段时才会更新；验证码需在 APP 中手动完成。
 
 [MITM]
 hostname = %APPEND% gw2c-hw-open.longfor.com
 
 [Script]
-龙湖APP凭据捕获 = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^\/]+\/v1\/user-info,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js
+龙湖APP凭据捕获 = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^\/]+\/v1\/user-info,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.js
 
-龙湖小程序凭据捕获 = type=http-request,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/lmarketing-task-api-mvc-prod\/openapi\/task\/v1\/signature\/clock(?:\?|$),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js
+龙湖APP及小程序请求捕获 = type=http-request,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/(?:supera\/member\/|lmarketing-task-api-mvc-prod\/),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.js
 
-龙湖自动签到 = type=cron,cronexp="0 9 * * *",wake-system=1,timeout=120,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js
+龙湖自动签到 = type=cron,cronexp="0 9 * * *",wake-system=1,timeout=120,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.js

@@ -2,6 +2,19 @@
 
 适用于 Shadowrocket、Surge 等代理工具。脚本内兼容 `$httpClient` / `$persistentStore` 和 Quantumult X 的 `$task` / `$prefs`；不同工具需使用各自支持的配置格式，随附 `.sgmodule` 不是 Quantumult X 配置。
 
+## v1.3.2 (2026-10-28)
+
+- APP 登录和签到相关请求会同时捕获实际携带的风控 Token、Cookie、验证码凭据等必要字段。签到优先使用本机捕获值，不再使用源码中的固定旧风控 Token、Cookie 或 `undefined` 验证码占位值。
+- 请求规则监听 `supera/member/` 与 `lmarketing-task-api-mvc-prod/`；小程序来源单独识别，不能覆盖 APP 配置。
+- APP 风控配置与登录 Token 绑定；切换登录 Token 后不使用旧会话配置，需等待新请求携带风控字段。
+- 只在字段实际变化时通知，不展示凭据内容。已有小程序签到配置继续有效。
+
+### 刷新 APP 风控凭据
+
+升级整个模块后重新连接，打开 APP 的“我的”和签到页。收到“龙湖 APP｜风控 Token 已更新”才说明实际捕获到新的风控 Token；仅有“Token 已更新”或“请求配置已更新”并不代表捕获到了风控字段。登录接口可能不携带风控 Token，需继续进入签到页面或手动签到。
+
+如果 APP 提示图形验证码，需要在 APP 内完成一次验证，以便捕获随后实际发送的请求。本功能仅刷新 APP 提供的凭据，不生成风控 Token，也不保证验证码凭据可重复使用、跨天有效或以后不再验证。字段缺失、为空或为 `undefined` / `null` 时不会把已有的有效字段覆盖为空。
+
 ## v1.3.1 (2026-10-28)
 
 - 移除抽奖活动签到、抽奖请求及相关捕获规则。
@@ -14,16 +27,16 @@
 模块地址：
 
 ```text
-https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.sgmodule
+https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.sgmodule
 ```
 
 脚本地址：
 
 ```text
-https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js
+https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.js
 ```
 
-1. 停用旧模块，导入新版模块后重新连接。需要更新整个模块，以移除旧捕获规则；不能只修改定时脚本地址。
+1. 停用旧模块，导入新版模块后重新连接。需要更新整个模块，以启用新的 APP 风控捕获规则；不能只修改定时脚本地址。
 2. 开启 MITM，将 `gw2c-hw-open.longfor.com` 加入主机名列表，安装并完全信任证书。
 3. APP：打开“我的”页面，等待“龙湖 APP”Token 获取成功通知。
 4. 小程序：手动签到一次，等待“龙湖小程序”配置已保存通知。今天已签到且不再产生请求时，需下次手动签到时捕获。

@@ -17,6 +17,7 @@
 const CONFIG = {
     SCRIPT_NAME: '龙湖签到',
     TOKEN_KEY: 'longfor_token',
+    APP_KEY: 'longfor_app_headers_v1',
     MINI_KEY: 'longfor_mini_signin_v1',
     DEBUG_MODE: false,
     RETRY_DELAY: 2000,
@@ -219,6 +220,62 @@ function pickHeaders(input) {
     return headers
 }
 
+function isMiniHeaders(headers) {
+    return headers['x-lf-channel'] === 'C2' ||
+        (headers['x-lf-dxrisk-source'] === '5' && /MicroMessenger|MiniProgram/i.test(headers['user-agent'] || ''))
+}
+
+function usableHeader(value) {
+    return typeof value === 'string' && value.trim() !== '' && !/^(undefined|null)$/i.test(value.trim())
+}
+
+function captureAppRequest() {
+    if ($request.method === 'OPTIONS') return
+    const url = $request.url || ''
+    if (!/^https:\/\/gw2c-hw-open\.longfor\.com\/(?:supera\/member\/|lmarketing-task-api-mvc-prod\/)/.test(url)) return
+    const headers = pickHeaders($request.headers)
+    if (isMiniHeaders(headers)) return
+    const raw = $request.headers || {}
+    const lmKey = Object.keys(raw).find(key => key.toLowerCase() === 'lmtoken')
+    const lmToken = lmKey ? raw[lmKey] : ''
+    const isApp = validateToken(lmToken) || headers['x-lf-channel'] === 'L0' ||
+        /MAIAWebKit|com\.longfor\.supera/i.test(headers['user-agent'] || '')
+    if (!isApp) return
+
+    const token = validateToken(lmToken) ? lmToken :
+        headers['x-lf-channel'] === 'L0' && validateToken(headers.token) ? headers.token : getVal(CONFIG.TOKEN_KEY)
+    if (!validateToken(token)) return
+    if (getVal(CONFIG.TOKEN_KEY) !== token) {
+        if (!setVal(CONFIG.TOKEN_KEY, token)) throw new Error('APP 登录 Token 保存失败')
+        notifyApp('Token 已更新', '认证信息仅保存在本机')
+    }
+    const previous = readJSON(CONFIG.APP_KEY)
+    // 登录 Token 变化后不混用上一会话的风控字段。
+    const oldHeaders = previous && previous.token === token ? previous.headers || {} : {}
+    const updates = {}
+    const isSignIn = url.split('?')[0] === CONFIG.API.SIGN_IN
+    const commonFields = ['user-agent', 'cookie', 'x-lf-dxrisk-source', 'x-lf-dxrisk-token', 'x-lf-dxrisk-captcha-token']
+    for (const key of Object.keys(headers)) {
+        // APP 登录凭据统一使用 longfor_token，避免过渡请求中的旧认证头覆盖新登录。
+        if (key === 'token' || key === 'x-lf-usertoken') continue
+        // 普通页面的 Origin/Referer 等不能覆盖实际签到页参数。
+        if ((isSignIn || commonFields.indexOf(key) >= 0) && usableHeader(headers[key])) updates[key] = headers[key]
+    }
+    if (!Object.keys(updates).length) return
+    const profile = { token, headers: { ...oldHeaders, ...updates } }
+    const serialized = JSON.stringify(profile)
+    if (getVal(CONFIG.APP_KEY) === serialized) return
+    if (!setVal(CONFIG.APP_KEY, serialized)) throw new Error('APP 风控配置保存失败')
+    if (updates['x-lf-dxrisk-token'] && updates['x-lf-dxrisk-token'] !== oldHeaders['x-lf-dxrisk-token']) {
+        notifyApp('风控 Token 已更新', '已保存请求中的最新风控凭据，签到时将使用')
+    } else if (updates['x-lf-dxrisk-captcha-token'] && updates['x-lf-dxrisk-captcha-token'] !== oldHeaders['x-lf-dxrisk-captcha-token']) {
+        notifyApp('验证凭据已更新', '已保存 APP 实际发送的验证凭据，有效性由服务端决定')
+    } else {
+        notifyApp('请求配置已更新', '已保存请求中可用的字段；本次未捕获新的风控或验证码 Token')
+    }
+    log('APP 请求配置已更新（凭据仅保存在本机）')
+}
+
 function captureMiniRequest() {
     if ($request.method === 'OPTIONS') return
     const url = $request.url || ''
@@ -226,8 +283,7 @@ function captureMiniRequest() {
     const headers = pickHeaders($request.headers)
     if (url.split('?')[0] === CONFIG.API.SIGN_IN && $request.method === 'POST') {
         // APP 与小程序共用接口，必须按来源区分，不能覆盖 APP 的 lmToken。
-        const mini = headers['x-lf-channel'] === 'C2' ||
-            (headers['x-lf-dxrisk-source'] === '5' && /MicroMessenger|MiniProgram/i.test(headers['user-agent'] || ''))
+        const mini = isMiniHeaders(headers)
         if (!mini) return
         const body = typeof $request.body === 'string' ? JSON.parse($request.body) : $request.body
         if (!body || typeof body.activity_no !== 'string' || !body.activity_no.trim()) {
@@ -328,18 +384,27 @@ async function doSignIn() {
     log('开始执行 APP 签到')
 
     try {
-        const headers = createHeaders(token, {
+        const defaults = createHeaders(token, {
             'Content-Type': 'application/json;charset=UTF-8',
-            'Cookie': 'acw_tc=ac11000117515948134458251e007763cde29cc35ff7b19c704ac2843e03fa',
             'Origin': 'https://longzhu.longfor.com',
             'Referer': 'https://longzhu.longfor.com/',
             'X-GAIA-API-KEY': 'c06753f1-3e68-437d-b592-b94656ea5517',
             'X-LF-Bu-Code': 'L00602',
             'X-LF-Channel': 'L0',
-            'X-LF-DXRisk-Captcha-Token': 'undefined',
-            'X-LF-DXRisk-Source': '2',
-            'X-LF-DXRisk-Token': '68673780TZSEnm6nueRfRAziVGwXc5NyaH5z5vo1'
+            'X-LF-DXRisk-Source': '2'
         })
+        const headers = {}
+        for (const key of Object.keys(defaults)) headers[key.toLowerCase()] = defaults[key]
+        const profile = readJSON(CONFIG.APP_KEY)
+        if (profile && profile.token === token && profile.headers) {
+            for (const key of Object.keys(profile.headers)) {
+                if (CAPTURE_HEADERS.indexOf(key) >= 0 && usableHeader(profile.headers[key])) headers[key] = profile.headers[key]
+            }
+        }
+        headers.token = token
+        headers['x-lf-usertoken'] = token
+        headers.authtoken = token
+        if (!headers['x-lf-dxrisk-token']) log('APP 尚未捕获风控 Token；请打开 APP 签到页，必要时手动完成验证')
 
         const options = {
             url: CONFIG.API.SIGN_IN,
@@ -370,9 +435,11 @@ async function doSignIn() {
 if (isRequest()) {
     try {
         getToken()
+        captureAppRequest()
         captureMiniRequest()
     } catch (error) {
-        notifyMini('请求捕获失败', error.message)
+        if (isMiniHeaders(pickHeaders($request.headers))) notifyMini('请求捕获失败', error.message)
+        else notifyApp('请求捕获失败', error.message)
         logError('请求捕获失败', error)
     } finally {
         done()
