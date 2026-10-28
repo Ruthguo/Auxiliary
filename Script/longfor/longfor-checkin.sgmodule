@@ -1,45 +1,15 @@
 #!name=龙湖自动签到
-#!desc=龙湖APP及小程序签到，捕获独立凭据，从活动页面解析抽奖配置
+#!desc=龙湖 APP 和小程序每日签到，通知分别标明项目与执行结果
 #!system=ios
-# 使用方法：
-# 1. 将此配置导入 Shadowrocket
-# 2. 开启 MITM 和脚本功能
-# 3. 打开龙湖APP登录, 打开“我的”页面获取token
-# 4. 脚本会自动执行签到和抽奖
+# 更新后重新连接小火箭，已有 APP Token 和小程序凭据可继续使用。
+# 首次使用：打开 APP“我的”页面获取 Token；手动完成一次小程序签到以捕获请求。
 
 [MITM]
 hostname = %APPEND% gw2c-hw-open.longfor.com
 
 [Script]
-# 获取Token脚本, 获取成功后可以注释
-龙湖签到Token = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^\/]+\/v1\/user-info,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
+龙湖APP凭据捕获 = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^\/]+\/v1\/user-info,requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js
 
-# 捕获小程序签到正文、抽奖页面入口和实际认证请求头。
-# 首次需手动完成一次小程序签到，并打开实际抽奖页。
-龙湖小程序及抽奖捕获 = type=http-request,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/(?:lmarketing-task-api-mvc-prod\/openapi\/task\/v1\/signature\/clock|llt-gateway-prod\/api\/v1\/activity\/auth\/lottery\/(?:sign|click))(?:\?|$),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
+龙湖小程序凭据捕获 = type=http-request,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/lmarketing-task-api-mvc-prod\/openapi\/task\/v1\/signature\/clock(?:\?|$),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js
 
-# 只保存响应确实包含转盘组件的页面，避免其他活动页面覆盖入口。
-龙湖抽奖页面捕获 = type=http-response,pattern=^https:\/\/gw2c-hw-open\.longfor\.com\/llt-gateway-prod\/api\/v1\/page\/info(?:\?|$),requires-body=1,max-size=0,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
-
-# 定时签到和抽奖脚本
-龙湖自动签到 = type=cron,cronexp="0 9 * * *",wake-system=1,timeout=120,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.0/Script/longfor/longfor-checkin.js
-
-# 使用说明：
-# 1. 安装配置后打开龙湖APP并登录
-# 2. 脚本会自动获取并保存认证信息
-# 3. 每天9点自动执行签到和抽奖
-# 4. 签到和抽奖结果会通过通知推送
-# 5. 兼容 Shadowrocket 环境，内联简化版 ToolKit
-
-# 功能特性：
-# ✅ 自动签到获取积分
-# ✅ 自动抽奖活动签到
-# ✅ 自动参与抽奖获取奖品
-# ✅ 智能错误处理和重试
-# ✅ 详细日志记录和通知
-
-# 抽奖活动说明：
-# - 脚本会先进行抽奖活动签到
-# - 签到成功后自动参与抽奖
-# - 支持处理"已签到"和"已抽奖"状态
-# - 抽奖成功会显示获得的奖品信息
+龙湖自动签到 = type=cron,cronexp="0 9 * * *",wake-system=1,timeout=120,script-path=https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.1/Script/longfor/longfor-checkin.js

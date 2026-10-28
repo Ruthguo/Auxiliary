@@ -7,11 +7,8 @@ const path = require('node:path')
 const source = fs.readFileSync(path.join(__dirname, '../Script/longfor/longfor-checkin.js'), 'utf8')
 const base = 'https://gw2c-hw-open.longfor.com'
 const signURL = base + '/lmarketing-task-api-mvc-prod/openapi/task/v1/signature/clock'
-const pageURL = base + '/llt-gateway-prod/api/v1/page/info?activityNo=current&pageNo=page'
 const appToken = 'app-token-for-testing-only'
-const savedPage = '{"activityNo":"current","pageNo":"page"}'
 const miniHeaders = { token: 'mini-token-for-testing-only', 'X-LF-UserToken': 'mini-user-token-distinct', 'X-LF-Channel': 'C2' }
-const turntable = { code: '0000', data: { activity_no: 'dynamic-activity', info: JSON.stringify({ list: [{ comName: 'turntablecom', data: { component_no: 'dynamic-component' } }] }) } }
 
 async function run({ store = {}, request, response, reply = () => ({ code: '0000' }), qx = false, failWrite = false, status = 200 } = {}) {
     const calls = [], logs = [], notices = []
@@ -68,65 +65,39 @@ test('APP signature request does not overwrite mini profile', async () => {
 test('invalid request body is reported and done is still called', async () => {
     const result = await run({ request: { method: 'POST', url: signURL, headers: miniHeaders, body: 'not json' } })
     assert.equal(result.store.longfor_mini_signin_v1, undefined)
-    assert.ok(result.notices.some(n => n[1] === '请求捕获失败'))
+    assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜请求捕获失败'))
 })
 
 test('storage failure is not reported as captured successfully', async () => {
     const result = await run({ failWrite: true, request: { method: 'POST', url: signURL, headers: miniHeaders, body: '{"activity_no":"mini"}' } })
-    assert.ok(result.notices.some(n => n[1] === '请求捕获失败'))
-    assert.ok(!result.notices.some(n => n[1] === '小程序签到配置已保存'))
+    assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜请求捕获失败'))
+    assert.ok(!result.notices.some(n => n[1] === '龙湖小程序｜小程序签到配置已保存'))
 })
 
-test('only actual turntable response updates lottery page', async () => {
-    const store = {}
-    const request = { method: 'GET', url: pageURL, headers: { authtoken: 'lottery-token-for-test' } }
-    await run({ store, request, response: { body: JSON.stringify(turntable) } })
-    assert.equal(JSON.parse(store.longfor_lottery_page_v1).activityNo, 'current')
-    const previous = JSON.stringify(store)
-    await run({ store, request: { ...request, url: pageURL.replace('current', 'unrelated') }, response: { body: JSON.stringify({ code: '0000', data: { info: '{"list":[]}' } }) } })
-    assert.equal(JSON.stringify(store), previous)
-})
 
-test('APP and mini signin use distinct tokens, dynamically discovered lottery IDs are used', async () => {
+
+test('APP and mini signin retain distinct tokens and ignore legacy lottery storage', async () => {
     const store = {
         longfor_token: appToken,
         longfor_mini_signin_v1: JSON.stringify({ headers: { token: miniHeaders.token, 'x-lf-usertoken': miniHeaders['X-LF-UserToken'] }, activity_no: 'mini-captured' }),
-        longfor_lottery_page_v1: '{"activityNo":"current","pageNo":"page"}',
-        longfor_lottery_headers_v1: '{"authtoken":"lottery-token-for-test"}'
+        longfor_lottery_page_v1: '{"activityNo":"legacy","pageNo":"legacy"}',
+        longfor_lottery_headers_v1: '{"authtoken":"legacy-token"}'
     }
-    const result = await run({ store, reply: call => {
-        if (call.url.includes('/page/info')) return turntable
-        if (call.url.endsWith('/lottery/sign')) return { code: '0000', data: { chance: 3 } }
-        return { code: '0000', data: { is_popup: 1, reward_info: [{ reward_num: 10 }] } }
-    } })
-    const signs = result.calls.filter(c => c.url === signURL)
-    assert.equal(signs.length, 2)
-    assert.equal(signs[0].headers.token, appToken)
-    assert.equal(signs[1].headers.token, miniHeaders.token)
-    assert.equal(JSON.parse(signs[1].body).activity_no, 'mini-captured')
-    const draw = result.calls.filter(c => c.url.endsWith('/lottery/click'))
-    assert.equal(draw.length, 1)
-    assert.deepEqual(JSON.parse(draw[0].body), { activity_no: 'dynamic-activity', component_no: 'dynamic-component', batch_no: '' })
-    assert.ok(result.calls.some(c => c.method === 'GET' && c.url === pageURL))
+    const result = await run({ store, reply: () => ({ code: '0000', data: { is_popup: 1, reward_info: [{ reward_num: 10 }] } }) })
+    assert.equal(result.calls.length, 2)
+    assert.ok(result.calls.every(c => c.url === signURL && c.method === 'POST'))
+    assert.equal(result.calls[0].headers.token, appToken)
+    assert.equal(result.calls[1].headers.token, miniHeaders.token)
+    assert.equal(JSON.parse(result.calls[1].body).activity_no, 'mini-captured')
+    assert.ok(result.notices.some(n => n[0] === '龙湖 APP 签到' && n[1] === '龙湖 APP｜签到成功'))
+    assert.ok(result.notices.some(n => n[0] === '龙湖小程序签到' && n[1] === '龙湖小程序｜签到成功'))
 })
 
-test('expired lottery page does not fall back to old activity or break APP success', async () => {
-    const result = await run({ store: { longfor_token: appToken, longfor_lottery_page_v1: savedPage }, reply: call => call.url === signURL ? { code: '0000', message: '获得积分' } : { code: '803012', message: '活动已结束，下次早点来' } })
-    assert.ok(result.notices.some(n => n[1] === '签到成功'))
-    assert.ok(result.notices.some(n => n[1] === '抽奖签到失败' && n[2].includes('803012')))
-    assert.ok(!result.calls.some(c => /lottery\/(sign|click)$/.test(c.url)))
-})
 
-for (const chance of [undefined, null, '', 'oops', -1, 0, 1.5]) {
-    test(`invalid or zero chance ${String(chance)} never draws`, async () => {
-        const result = await run({ store: { longfor_lottery_headers_v1: '{"authtoken":"lottery-token-for-test"}', longfor_lottery_page_v1: savedPage }, reply: call => call.url.includes('/page/info') ? turntable : { code: '0000', data: { chance } } })
-        assert.ok(!result.calls.some(c => c.url.endsWith('/lottery/click')))
-    })
-}
 
 test('business failure in mini signin is never mislabeled as already signed in', async () => {
     const result = await run({ store: { longfor_mini_signin_v1: JSON.stringify({ headers: miniHeaders, activity_no: 'mini' }) }, reply: () => ({ code: '803012', message: '活动已结束' }) })
-    assert.ok(result.notices.some(n => n[1] === '小程序签到失败' && n[2].includes('803012')))
+    assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜签到失败' && n[2].includes('803012')))
     assert.ok(!JSON.stringify(result.notices).includes('今日已签到'))
 })
 
@@ -142,7 +113,7 @@ test('Quantumult X fetch and storage are supported without APP token', async () 
     const result = await run({ qx: true, store: { longfor_mini_signin_v1: JSON.stringify({ headers: miniHeaders, activity_no: 'mini' }) }, reply: () => ({ code: '0000', data: { is_popup: 1 } }) })
     assert.equal(result.calls.length, 1)
     assert.equal(result.calls[0].method, 'POST')
-    assert.ok(result.notices.some(n => n[1] === '小程序签到成功'))
+    assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜签到成功'))
 })
 
 test('APP token capture handles arbitrary header casing without leaking token', async () => {
@@ -151,20 +122,63 @@ test('APP token capture handles arbitrary header casing without leaking token', 
     assert.ok(!JSON.stringify(result.logs.concat(result.notices)).includes(appToken))
 })
 
-test('no captured lottery page never sends requests with old reference IDs', async () => {
-    const result = await run({ store: { longfor_lottery_headers_v1: '{"authtoken":"lottery-token-for-test"}' } })
-    assert.equal(result.calls.length, 0)
-    assert.ok(result.notices.some(n => n[2].includes('尚未捕获抽奖入口')))
-})
+
 
 test('HTTP error status is not treated as business success', async () => {
     const result = await run({ status: 503, store: { longfor_mini_signin_v1: JSON.stringify({ headers: miniHeaders, activity_no: 'mini' }) } })
     assert.equal(result.calls.length, 1)
-    assert.ok(result.notices.some(n => n[1] === '小程序签到失败' && n[2].includes('HTTP 503')))
+    assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜签到失败' && n[2].includes('HTTP 503')))
 })
 
 test('Quantumult X rejected fetch finishes once and reports failure', async () => {
     const result = await run({ qx: true, store: { longfor_mini_signin_v1: JSON.stringify({ headers: miniHeaders, activity_no: 'mini' }) }, reply: () => { throw { error: 'network failure' } } })
     assert.equal(result.calls.length, 1)
-    assert.ok(result.notices.some(n => n[1] === '小程序签到失败'))
+    assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜签到失败'))
+})
+
+
+test('APP business failure and mini success are separately labeled and both execute', async () => {
+    const store = { longfor_token: appToken, longfor_mini_signin_v1: JSON.stringify({ headers: miniHeaders, activity_no: 'mini' }) }
+    const result = await run({ store, reply: call => call.headers.token === appToken
+        ? { code: '801810', message: '活动太火爆了，明日再来试试~' }
+        : { code: '0000', data: { is_popup: 1, reward_info: [{ reward_num: 10 }] } } })
+    assert.equal(result.calls.length, 2)
+    assert.ok(result.notices.some(n => n[0] === '龙湖 APP 签到' && n[1] === '龙湖 APP｜签到异常' && n[2].includes('801810')))
+    assert.ok(result.notices.some(n => n[0] === '龙湖小程序签到' && n[1] === '龙湖小程序｜签到成功' && n[2].includes('10')))
+})
+
+test('APP accepts string 200 success code', async () => {
+    const result = await run({ store: { longfor_token: appToken }, reply: () => ({ code: '200', message: '获得积分' }) })
+    assert.ok(result.notices.some(n => n[0] === '龙湖 APP 签到' && n[1] === '龙湖 APP｜签到成功'))
+    assert.ok(!result.notices.some(n => n[1] === '龙湖 APP｜签到异常'))
+})
+
+test('both missing profiles report project-specific unconfigured notices', async () => {
+    const result = await run()
+    assert.equal(result.calls.length, 0)
+    assert.ok(result.notices.some(n => n[0] === '龙湖 APP 签到' && n[1] === '龙湖 APP｜签到未配置'))
+    assert.ok(result.notices.some(n => n[0] === '龙湖小程序签到' && n[1] === '龙湖小程序｜签到未配置'))
+})
+
+test('old lottery capture requests have no effect', async () => {
+    for (const route of ['page/info?activityNo=old&pageNo=old', 'activity/auth/lottery/sign', 'activity/auth/lottery/click']) {
+        const store = { longfor_lottery_page_v1: 'unchanged' }
+        const result = await run({ store, request: { method: 'POST', url: base + '/llt-gateway-prod/api/v1/' + route, headers: { authtoken: 'old-token-for-testing' }, body: '{}' } })
+        assert.equal(result.calls.length, 0)
+        assert.equal(result.notices.length, 0)
+        assert.equal(JSON.stringify(store), '{"longfor_lottery_page_v1":"unchanged"}')
+    }
+})
+
+test('module captures only signin credentials and points to new version', () => {
+    const module = fs.readFileSync(path.join(__dirname, '../Script/longfor/longfor-checkin.sgmodule'), 'utf8')
+    assert.ok(!/lottery|page\\\/info|抽奖/.test(module))
+    const rules = module.split('\n').filter(line => line.includes('script-path='))
+    assert.equal(rules.length, 3)
+    for (const line of rules) assert.ok(line.includes('@v1.3.1/'))
+    const capture = rules.find(line => line.includes('type=http-request'))
+    const pattern = capture.match(/pattern=(.*?),requires-body=/)[1]
+    const regex = new RegExp(pattern)
+    assert.ok(regex.test(signURL))
+    assert.ok(!regex.test(base + '/llt-gateway-prod/api/v1/activity/auth/lottery/sign'))
 })
