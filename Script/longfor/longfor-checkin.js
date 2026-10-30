@@ -20,6 +20,8 @@ const CONFIG = {
     APP_KEY: 'longfor_app_headers_v1',
     MINI_KEY: 'longfor_mini_signin_v1',
     DEBUG_MODE: false,
+    DIAGNOSTIC_LOG: true,
+    LOG_CHUNK_SIZE: 2000,
     RETRY_DELAY: 2000,
     REQUEST_TIMEOUT: 10000,
     
@@ -61,6 +63,68 @@ function logDebug(message) {
     if (CONFIG.DEBUG_MODE) {
         log(message, 'DEBUG')
     }
+}
+
+// 诊断版按用户要求原样记录；仅 console 输出，不上传日志。
+function diagnosticLog() {
+    if (!CONFIG.DIAGNOSTIC_LOG || !isRequest()) return
+    const request = $request || {}
+    const url = request.url || ''
+    if (!/^https?:\/\/(?:[a-z0-9-]+\.)*(?:longfor\.com|longhu\.net)(?::\d+)?(?:\/|$)/i.test(url)) return
+    const response = typeof $response !== 'undefined' && $response ? $response : null
+    const phase = response ? '响应' : '请求'
+    const headers = pickHeaders(request.headers)
+    const project = isMiniHeaders(headers) ? '龙湖小程序' :
+        headers['x-lf-channel'] === 'L0' || /MAIAWebKit|com\.longfor\.supera/i.test(headers['user-agent'] || '') ? '龙湖 APP' : '龙湖接口'
+    const prefix = `【龙湖诊断】【${project}】【${phase}】`
+    const method = request.method || 'GET'
+    const base = `${prefix} ${method} ${url.split('?')[0]}`
+    console.log(`${base} BEGIN ${new Date().toISOString()}`)
+    diagnosticChunks(base, 'request.url', url)
+    // URL 和原始请求头在响应阶段再次记录，方便单独查看响应片段。
+    diagnosticChunks(base, 'request.headers', request.headers || {})
+    diagnosticBody(base, 'request.body', request.body, request.headers)
+    if (response) {
+        console.log(`${base} response.status=${response.statusCode || response.status || 'unknown'}`)
+        diagnosticChunks(base, 'response.headers', response.headers || {})
+        diagnosticBody(base, 'response.body', response.body, response.headers)
+    }
+    console.log(`${base} END`)
+}
+
+function diagnosticChunks(prefix, field, value) {
+    let text
+    if (typeof value === 'string') text = value
+    else {
+        try { text = JSON.stringify(value) }
+        catch (_) { text = String(value) }
+    }
+    if (text === undefined) text = '[undefined]'
+    if (!text.length) {
+        console.log(`${prefix} ${field}=[empty]`)
+        return
+    }
+    const count = Math.ceil(text.length / CONFIG.LOG_CHUNK_SIZE)
+    for (let start = 0, part = 1; start < text.length; start += CONFIG.LOG_CHUNK_SIZE, part++) {
+        console.log(`${prefix} ${field} [${part}/${count}]=${text.slice(start, start + CONFIG.LOG_CHUNK_SIZE)}`)
+    }
+}
+
+function diagnosticBody(prefix, field, body, headers) {
+    if (body === undefined || body === null) {
+        console.log(`${prefix} ${field}=[not provided by runtime]`)
+        return
+    }
+    const raw = headers || {}
+    const typeKey = Object.keys(raw).find(key => key.toLowerCase() === 'content-type')
+    const type = typeKey ? String(raw[typeKey]) : ''
+    // 二进制和静态资源仅记录元信息；JSON、表单、HTML 等文本原样分段输出。
+    if (/^(?:image\/|audio\/|video\/|font\/)|(?:javascript|text\/css|octet-stream|application\/pdf)/i.test(type) ||
+        typeof ArrayBuffer !== 'undefined' && (body instanceof ArrayBuffer || ArrayBuffer.isView(body))) {
+        console.log(`${prefix} ${field}=[binary/static body omitted; content-type=${type}; size=${body.byteLength || body.length || 'unknown'}]`)
+        return
+    }
+    diagnosticChunks(prefix, field, body)
 }
 
 function isEmpty(obj) {
@@ -340,7 +404,7 @@ async function doMiniSignIn() {
 function getToken() {
     // 页面接口版本会随龙湖 APP 升级（例如 v1_14_0、v1_30_0），
     // 不要写死版本号，否则 APP 升级后将无法捕获 lmToken。
-    if (isMatch(/\/supera\/member\/api\/bff\/pages\/v[^/]+\/v1\/user-info/)) {
+    if (isMatch(/^https:\/\/gw2c-hw-open\.longfor\.com\/supera\/member\/api\/bff\/pages\/v[^/]+\/v1\/user-info/)) {
         log('开始获取token')
         
         try {
@@ -434,9 +498,17 @@ async function doSignIn() {
 // 主执行逻辑：每个任务独立失败，所有异步任务结束后只调用一次 $done。
 if (isRequest()) {
     try {
-        getToken()
-        captureAppRequest()
-        captureMiniRequest()
+        diagnosticLog()
+    } catch (error) {
+        logError('龙湖接口日志记录失败', error)
+    }
+    try {
+        // 凭据只在请求阶段捕获一次，响应阶段只记日志，不重复存储或通知。
+        if (typeof $response === 'undefined' || !$response) {
+            getToken()
+            captureAppRequest()
+            captureMiniRequest()
+        }
     } catch (error) {
         if (isMiniHeaders(pickHeaders($request.headers))) notifyMini('请求捕获失败', error.message)
         else notifyApp('请求捕获失败', error.message)

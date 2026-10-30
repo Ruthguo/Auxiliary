@@ -45,7 +45,7 @@ async function run({ store = {}, request, response, reply = () => ({ code: '0000
     return { calls, logs, notices, store }
 }
 
-test('capture mini credentials separately, normalize headers, never log secrets', async () => {
+test('capture mini credentials separately while raw diagnostics preserve request headers', async () => {
     const store = { longfor_token: appToken }
     const result = await run({ store, request: { method: 'POST', url: signURL, headers: { ...miniHeaders, Authorization: 'must-not-store' }, body: JSON.stringify({ activity_no: 'mini-activity' }) } })
     const captured = JSON.parse(store.longfor_mini_signin_v1)
@@ -53,7 +53,8 @@ test('capture mini credentials separately, normalize headers, never log secrets'
     assert.equal(captured.headers.authorization, undefined)
     assert.equal(store.longfor_token, appToken)
     assert.equal(result.calls.length, 0)
-    assert.ok(!JSON.stringify(result.logs.concat(result.notices)).includes(miniHeaders.token))
+    assert.ok(JSON.stringify(result.logs).includes(miniHeaders.token))
+    assert.ok(!JSON.stringify(result.notices).includes(miniHeaders.token))
 })
 
 test('APP signature request does not overwrite mini profile', async () => {
@@ -116,10 +117,11 @@ test('Quantumult X fetch and storage are supported without APP token', async () 
     assert.ok(result.notices.some(n => n[1] === '龙湖小程序｜签到成功'))
 })
 
-test('APP token capture handles arbitrary header casing without leaking token', async () => {
+test('APP token capture handles arbitrary header casing and keeps raw token in local diagnostic log', async () => {
     const result = await run({ request: { method: 'GET', url: base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info', headers: { LmToKeN: appToken } } })
     assert.equal(result.store.longfor_token, appToken)
-    assert.ok(!JSON.stringify(result.logs.concat(result.notices)).includes(appToken))
+    assert.ok(JSON.stringify(result.logs).includes(appToken))
+    assert.ok(!JSON.stringify(result.notices).includes(appToken))
 })
 
 
@@ -170,18 +172,18 @@ test('old lottery capture requests have no effect', async () => {
     }
 })
 
-test('module captures only signin credentials and points to new version', () => {
+test('diagnostic module covers all Longfor and verification APIs without phone cron', () => {
     const module = fs.readFileSync(path.join(__dirname, '../Script/longfor/longfor-checkin.sgmodule'), 'utf8')
-    assert.ok(!/lottery|page\\\/info|抽奖/.test(module))
     const rules = module.split('\n').filter(line => line.includes('script-path='))
-    assert.equal(rules.length, 3)
-    for (const line of rules) assert.ok(line.includes('@v1.3.2/'))
-    const capture = rules.find(line => line.includes('type=http-request'))
-    const pattern = capture.match(/pattern=(.*?),requires-body=/)[1]
-    const regex = new RegExp(pattern)
-    assert.ok(regex.test(signURL))
-    assert.ok(regex.test(base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info'))
-    assert.ok(!regex.test(base + '/llt-gateway-prod/api/v1/activity/auth/lottery/sign'))
+    assert.equal(rules.length, 2)
+    assert.ok(!module.includes('type=cron'))
+    for (const line of rules) {
+        assert.ok(line.includes('@v1.3.3/'))
+        const pattern = line.match(/pattern=(.*?),requires-body=/)[1]
+        const regex = new RegExp(pattern)
+        for (const url of [signURL, base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info', base + '/llt-gateway-prod/api/v1/activity/auth/lottery/sign', 'https://devops-prod.longfor.com/v2/api/uv/type?appId=abc', 'https://ly-ver.longhu.net/api/v1']) assert.ok(regex.test(url), url)
+        for (const url of ['https://longfor.com.evil.example/api', 'https://not-longfor.com/api', 'https://example.com/longfor.com']) assert.ok(!regex.test(url), url)
+    }
 })
 
 test('login traffic captures fresh risk token and cookie, then APP uses them without hardcoded values', async () => {
@@ -198,7 +200,10 @@ test('login traffic captures fresh risk token and cookie, then APP uses them wit
     assert.equal(profile.headers['x-lf-dxrisk-token'], risk)
     assert.ok(!profile.headers['x-lf-dxrisk-captcha-token'])
     assert.ok(captured.notices.some(n => n[1] === '龙湖 APP｜风控 Token 已更新'))
-    for (const secret of [appToken, risk, cookie]) assert.ok(!JSON.stringify(captured.logs.concat(captured.notices)).includes(secret))
+    for (const secret of [appToken, risk, cookie]) {
+        assert.ok(JSON.stringify(captured.logs).includes(secret))
+        assert.ok(!JSON.stringify(captured.notices).includes(secret))
+    }
     const repeated = await run({ store, request })
     assert.equal(repeated.notices.length, 0)
     const executed = await run({ store })
@@ -270,4 +275,59 @@ test('old captured auth headers cannot overwrite the current APP login token', a
     assert.equal(result.calls[0].headers.token, newToken)
     assert.equal(result.calls[0].headers['x-lf-usertoken'], newToken)
     assert.equal(result.calls[0].headers.authtoken, newToken)
+})
+
+
+test('response diagnostics preserve query, headers, sensitive fields and complete text without mutating traffic', async () => {
+    const result = await run({ request: {
+        method: 'POST', url: 'https://ly-ver.longhu.net/api/v1?captchaToken=query-original',
+        headers: { Cookie: 'request-cookie-original', 'Content-Type': 'application/json' },
+        body: '{"token":"request-token-original","ac":"actual-ac-original"}'
+    }, response: {
+        statusCode: 200, headers: { 'Set-Cookie': 'response-cookie-original', 'Content-Type': 'application/json' },
+        body: '{"success":true,"token":"captcha-response-original","phone":"13800000000"}'
+    } })
+    const logs = result.logs.join('\n')
+    for (const value of ['query-original', 'request-cookie-original', 'request-token-original', 'actual-ac-original', 'response-cookie-original', 'captcha-response-original', '13800000000', 'response.status=200']) assert.ok(logs.includes(value), value)
+    assert.equal(result.calls.length, 0)
+    assert.equal(result.notices.length, 0)
+    assert.deepEqual(result.store, {})
+})
+
+test('response phase only logs and does not recapture credentials', async () => {
+    const store = {}
+    const result = await run({ store, request: { method: 'POST', url: signURL, headers: miniHeaders, body: '{"activity_no":"mini"}' }, response: { status: 200, body: '{"code":"0000"}' } })
+    assert.deepEqual(store, {})
+    assert.equal(result.notices.length, 0)
+    assert.ok(result.logs.some(line => line.includes('【响应】')))
+})
+
+test('text bodies are logged fully across chunks', async () => {
+    const body = 'raw-start-' + 'x'.repeat(7000) + '-raw-end'
+    const result = await run({ request: { method: 'POST', url: base + '/diagnostic-test', headers: { 'Content-Type': 'text/plain' }, body } })
+    const parts = result.logs.filter(line => line.includes(' request.body [')).map(line => line.slice(line.indexOf(']=') + 2))
+    assert.equal(parts.join(''), body)
+    assert.equal(parts.length, 4)
+})
+
+test('long query strings are chunked without losing the original URL', async () => {
+    const url = 'https://devops-prod.longfor.com/api?payload=' + 'z'.repeat(6000)
+    const result = await run({ request: { method: 'GET', url, headers: {} } })
+    const parts = result.logs.filter(line => line.includes(' request.url [')).map(line => line.slice(line.indexOf(']=') + 2))
+    assert.equal(parts.join(''), url)
+    assert.ok(result.logs.every(line => line.length < 2400))
+})
+
+test('binary images keep headers and metadata rather than dumping image bytes', async () => {
+    const result = await run({ request: { method: 'GET', url: 'https://ly-ver.longhu.net/slider.png', headers: {} }, response: { status: 200, headers: { 'Content-Type': 'image/png', 'Set-Cookie': 'raw-image-cookie' }, body: 'FAKE_BINARY_PAYLOAD' } })
+    assert.ok(result.logs.some(line => line.includes('raw-image-cookie')))
+    assert.ok(result.logs.some(line => line.includes('binary/static body omitted')))
+    assert.ok(!result.logs.some(line => line.includes('FAKE_BINARY_PAYLOAD')))
+})
+
+test('unrelated domains do not produce diagnostic dumps or credential updates', async () => {
+    const result = await run({ request: { method: 'GET', url: 'https://longfor.com.evil.example/api', headers: { token: 'unrelated-token' } } })
+    assert.equal(result.logs.length, 0)
+    assert.equal(result.calls.length, 0)
+    assert.deepEqual(result.store, {})
 })

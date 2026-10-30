@@ -2,6 +2,19 @@
 
 适用于 Shadowrocket、Surge 等代理工具。脚本内兼容 `$httpClient` / `$persistentStore` 和 Quantumult X 的 `$task` / `$prefs`；不同工具需使用各自支持的配置格式，随附 `.sgmodule` 不是 Quantumult X 配置。
 
+## v1.3.3 (2026-10-30)：手机接口诊断版
+
+- 模块同时记录请求和响应，范围为 `longfor.com`、`longhu.net` 及其子域名，包含签到网关、页面接口、`devops-prod.longfor.com` UV 查询、`ly-ver.longhu.net` 验证接口等。
+- 按用户要求**不脱敏**：请求方法、完整 URL（含查询参数）、请求头、Cookie、Token、文本请求正文、响应状态、响应头和文本响应正文均原样输出到代理工具 console 日志。
+- 每段输出 2000 字符，并附请求方法/URL、方向和分段序号，减少单条日志被截断的问题；JSON 及表单正文不做字段过滤。图片、字体、JS/CSS 等资源只记录地址、头部和正文元信息，不输出二进制/静态正文。
+- 请求/响应脚本正文上限设为 1 MiB，防止大资源导致隧道内存压力。超过上限的报文可能被代理工具跳过；该上限可按实际需要调整。日志只覆盖经过本代理且能够 MITM 的域名，不包含未列出的第三方域名、无法解密的连接或工具未提供的正文。
+- 保留 APP 与小程序本地凭据更新，但只在请求阶段执行一次。模块没有 cron 规则，由服务器负责定时签到；旧手机模块需停用，避免重复规则和任务。
+- 不自动上传日志或同步凭据到服务器，也不把真实日志/凭据提交到仓库。导出 PacketTunnel 日志后可用于后续开发。
+
+### 本次抓取步骤
+
+导入 v1.3.3 模块，停用旧版并重新连接；开启 MITM 且证书已信任。打开 APP 的“我的”和签到页，触发签到/图形验证，再操作小程序签到。导出日志，搜索 `【龙湖诊断】`，可以查看请求与对应响应。
+
 ## v1.3.2 (2026-10-28)
 
 - APP 登录和签到相关请求会同时捕获实际携带的风控 Token、Cookie、验证码凭据等必要字段。签到优先使用本机捕获值，不再使用源码中的固定旧风控 Token、Cookie 或 `undefined` 验证码占位值。
@@ -27,17 +40,17 @@
 模块地址：
 
 ```text
-https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.sgmodule
+https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.3/Script/longfor/longfor-checkin.sgmodule
 ```
 
 脚本地址：
 
 ```text
-https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-checkin.js
+https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.3/Script/longfor/longfor-checkin.js
 ```
 
-1. 停用旧模块，导入新版模块后重新连接。需要更新整个模块，以启用新的 APP 风控捕获规则；不能只修改定时脚本地址。
-2. 开启 MITM，将 `gw2c-hw-open.longfor.com` 加入主机名列表，安装并完全信任证书。
+1. 停用旧模块，导入新版模块后重新连接。需要更新整个模块，以启用请求和响应诊断规则；不能只修改定时脚本地址。
+2. 开启 MITM，安装并完全信任证书；新版模块已追加龙湖域名及子域名。
 3. APP：打开“我的”页面，等待“龙湖 APP”Token 获取成功通知。
 4. 小程序：手动签到一次，等待“龙湖小程序”配置已保存通知。今天已签到且不再产生请求时，需下次手动签到时捕获。
 5. 已在旧版保存的 APP Token 和小程序配置可直接使用，不需要为了升级重新捕获。
@@ -55,13 +68,13 @@ https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.2/Script/longfor/longfor-chec
 
 ## 运行与排查
 
-默认每天 09:00 执行 APP 和小程序两项签到，均不自动重试 POST 请求。手动测试可使用代理工具的 cron 脚本测试入口，或将时间临时改为几分钟后。cron 顺序为“分钟 小时 日期 月份 星期”；`40 9 * * *` 表示每天 09:40。修改后重新连接，并检查日志中的 `script cron evaluate next`。
+从 v1.3.3 起手机模块不再配置 cron，服务器每天 09:00 执行签到。JS 保留原签到分支供手动调试，POST 不自动重试。手动测试可使用代理工具的 cron 脚本测试入口，或将时间临时改为几分钟后。cron 顺序为“分钟 小时 日期 月份 星期”；`40 9 * * *` 表示每天 09:40。修改后重新连接，并检查日志中的 `script cron evaluate next`。
 
 `script cron evaluate cancel` 之后没有重新调度时，应排查代理工具和网络状态，不能据此认定签到接口出错。
 
 小程序按 `X-LF-Channel: C2`，或 `X-LF-DXRisk-Source: 5` 加微信 UA 识别。脚本保存实际请求中的活动编号、独立的 `token` / `X-LF-UserToken` 和必要请求头；活动编号、登录状态或风控信息变化后需要重新捕获。其他渠道的小程序需根据实际请求适配。
 
-使用 APP 和小程序时请确认登录同一个账号。本脚本按单账号设计；凭据保存在代理工具本地存储，不输出到脚本日志。抓包日志本身可能包含敏感请求头，分享前请脱敏。
+使用 APP 和小程序时请确认登录同一个账号。本脚本按单账号设计；凭据保存在代理工具本地存储；诊断版按用户要求在日志中原样记录实际请求与响应，脚本不自动上传这些数据。
 
 已验证离线模拟 API 和凭据存储流程。真实活动是否有效及风控结果以手机实际执行为准。
 
