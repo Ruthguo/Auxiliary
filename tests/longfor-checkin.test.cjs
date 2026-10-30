@@ -172,17 +172,19 @@ test('old lottery capture requests have no effect', async () => {
     }
 })
 
-test('diagnostic module covers all Longfor and verification APIs without phone cron', () => {
+test('diagnostic module confines MITM and scripts to business gateway, bypassing captcha resources', () => {
     const module = fs.readFileSync(path.join(__dirname, '../Script/longfor/longfor-checkin.sgmodule'), 'utf8')
     const rules = module.split('\n').filter(line => line.includes('script-path='))
     assert.equal(rules.length, 2)
     assert.ok(!module.includes('type=cron'))
+    const mitm = module.split('\n').find(line => line.startsWith('hostname ='))
+    assert.equal(mitm, 'hostname = %APPEND% gw2c-hw-open.longfor.com')
     for (const line of rules) {
-        assert.ok(line.includes('@v1.3.3/'))
+        assert.ok(line.includes('@v1.3.4/'))
         const pattern = line.match(/pattern=(.*?),requires-body=/)[1]
         const regex = new RegExp(pattern)
-        for (const url of [signURL, base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info', base + '/llt-gateway-prod/api/v1/activity/auth/lottery/sign', 'https://devops-prod.longfor.com/v2/api/uv/type?appId=abc', 'https://ly-ver.longhu.net/api/v1']) assert.ok(regex.test(url), url)
-        for (const url of ['https://longfor.com.evil.example/api', 'https://not-longfor.com/api', 'https://example.com/longfor.com']) assert.ok(!regex.test(url), url)
+        for (const url of [signURL, base + '/supera/member/api/bff/pages/v1_30_0/v1/user-info', base + '/llt-gateway-prod/api/v1/activity/auth/lottery/sign']) assert.ok(regex.test(url), url)
+        for (const url of ['https://longfor.com.evil.example/api', 'https://not-longfor.com/api', 'https://example.com/longfor.com', 'https://devops-prod.longfor.com/v2/api/uv/type?appId=abc', 'https://ly-ver.longhu.net/api/v1', 'https://ly-ver.longhu.net/image.png', 'https://longzhu.longfor.com/']) assert.ok(!regex.test(url), url)
     }
 })
 

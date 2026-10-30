@@ -2,7 +2,15 @@
 
 适用于 Shadowrocket、Surge 等代理工具。脚本内兼容 `$httpClient` / `$persistentStore` 和 Quantumult X 的 `$task` / `$prefs`；不同工具需使用各自支持的配置格式，随附 `.sgmodule` 不是 Quantumult X 配置。
 
-## v1.3.3 (2026-10-30)：手机接口诊断版
+## v1.3.4 (2026-10-30)：缩小诊断范围，避免干扰验证码加载
+
+- 撤回 v1.3.3 中的全域 MITM 与脚本规则；仅解密、记录 `gw2c-hw-open.longfor.com` 业务网关。
+- 不再由本模块处理 `ly-ver.longhu.net`、`devops-prod.longfor.com`、验证码图片、页面和其他静态资源，以排除新增解密/正文处理对验证码加载的影响。
+- 保留业务网关请求/响应的原始日志、APP 与小程序凭据捕获；继续不设手机 cron。
+- 必须停用旧 v1.3.3 模块后再导入新版并重新连接。若曾将 `*.longfor.com`、`*.longhu.net` 手动写进主配置，也需删除这些诊断时新增的通配符，否则旧规则仍会生效。
+- 本版不记录独立验证码服务的明文内容，不能再声称覆盖所有龙湖域名。验证是否恢复仍需手机实测；服务器定时签到与 Bark 不受本次修改影响。
+
+## v1.3.3 (2026-10-30)：手机接口诊断版（已缩小范围）
 
 - 模块同时记录请求和响应，范围为 `longfor.com`、`longhu.net` 及其子域名，包含签到网关、页面接口、`devops-prod.longfor.com` UV 查询、`ly-ver.longhu.net` 验证接口等。
 - 按用户要求**不脱敏**：请求方法、完整 URL（含查询参数）、请求头、Cookie、Token、文本请求正文、响应状态、响应头和文本响应正文均原样输出到代理工具 console 日志。
@@ -13,7 +21,7 @@
 
 ### 本次抓取步骤
 
-导入 v1.3.3 模块，停用旧版并重新连接；开启 MITM 且证书已信任。打开 APP 的“我的”和签到页，触发签到/图形验证，再操作小程序签到。导出日志，搜索 `【龙湖诊断】`，可以查看请求与对应响应。
+导入最新模块，停用旧版并重新连接；开启 MITM 且证书已信任。打开 APP 的“我的”和签到页，触发签到/图形验证，再操作小程序签到。导出日志，搜索 `【龙湖诊断】`，可以查看请求与对应响应。
 
 ## v1.3.2 (2026-10-28)
 
@@ -40,17 +48,17 @@
 模块地址：
 
 ```text
-https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.3/Script/longfor/longfor-checkin.sgmodule
+https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.4/Script/longfor/longfor-checkin.sgmodule
 ```
 
 脚本地址：
 
 ```text
-https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.3/Script/longfor/longfor-checkin.js
+https://cdn.jsdelivr.net/gh/Ruthguo/Auxiliary@v1.3.4/Script/longfor/longfor-checkin.js
 ```
 
 1. 停用旧模块，导入新版模块后重新连接。需要更新整个模块，以启用请求和响应诊断规则；不能只修改定时脚本地址。
-2. 开启 MITM，安装并完全信任证书；新版模块已追加龙湖域名及子域名。
+2. 开启 MITM，安装并完全信任证书；新版模块仅追加 `gw2c-hw-open.longfor.com`。
 3. APP：打开“我的”页面，等待“龙湖 APP”Token 获取成功通知。
 4. 小程序：手动签到一次，等待“龙湖小程序”配置已保存通知。今天已签到且不再产生请求时，需下次手动签到时捕获。
 5. 已在旧版保存的 APP Token 和小程序配置可直接使用，不需要为了升级重新捕获。
